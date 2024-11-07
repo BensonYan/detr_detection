@@ -8,6 +8,11 @@ Model training:
 $ python3 main.py fit --config=config/nt_object.yaml
 ```
 
+Model Validating:
+```bash
+$ python3 main.py validate --config=config/nt_object.yaml --ckpt_path="lightning_logs/version_0/checkpoints/epoch=0-step=38035.ckpt"
+```
+
 Model Testing:
 
 ```bash

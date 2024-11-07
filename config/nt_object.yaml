@@ -1,0 +1,55 @@
+# lightning.pytorch==2.2.0
+seed_everything: 0
+model:
+  class_path: trainer.deepfake_detect.DetectModule
+  init_args:
+    optimizer_args:
+      lr: 1e-4
+      lr_backbone: 1e-5
+      lr_mlp: 5e-4
+      lr_weight_decay: 1e-4
+    num_queries: 10
+    num_classes: 2
+data:
+  class_path: dataset.data_modules.NTObjectDataModule
+  init_args:
+    root_dir: /data/Deepfake/ff_c23_object
+#    root_dir2: /data/Deepfake/NT_object  ff_c23_object
+    batch_size: 256
+
+
+    num_workers: 32
+    image_size: 224
+trainer:
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:  # minimal val_loss checkpoint
+        every_n_epochs: 1
+        save_top_k: 1
+        monitor: val_mlp_loss
+        mode: min
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:  # maximum val_acc1 checkpoint
+        every_n_epochs: 1
+        save_top_k: 1
+        monitor: val_acc1
+        mode: max
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args: # maximum val_auc1 checkpoint
+        every_n_epochs: 1
+        save_top_k: 1
+        monitor: val_auc1
+        mode: max
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        every_n_epochs: 1
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: step
+    - class_path: lightning.pytorch.callbacks.ModelSummary
+      init_args:
+        max_depth: 3
+  enable_progress_bar: True
+  precision: 16-mixed
+  max_epochs: 50
+#  logger: False

@@ -25,7 +25,7 @@ class NTObjectDataModule(L.LightningDataModule):
         bboxes = [item[1]['boxes'] for item in batch]
         labels = [item[1]['labels'] for item in batch]
         category = [item[1]['class'] for item in batch]
-
+        id = [item[1]['image_id'] for item in batch]
         # 对 bbox 进行填充以匹配批次中最长的长度
         max_num_bboxes = max(len(bbox) for bbox in bboxes)
         padded_bboxes = [list(bbox) + [[0, 0, 0, 0]] * (max_num_bboxes - len(bbox)) for bbox in bboxes]
@@ -34,6 +34,7 @@ class NTObjectDataModule(L.LightningDataModule):
 
         return torch.stack(images), {
             # 'images': torch.stack(images),
+            'idx': torch.tensor(id),
             'boxes': torch.tensor(converted_data),
             'labels': torch.stack(labels),
             "class": torch.tensor(category)

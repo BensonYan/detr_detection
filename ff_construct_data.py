@@ -216,43 +216,43 @@ from tqdm import tqdm
 #             write_jsonl(fake_name,bboxes,specific_method,"fake")
 
 # output_path = "/data/Deepfake/ff_c23_object/train"
-# output_jsonl_path = "/data/Deepfake/ff_c23_object/train/metadata.jsonl"
-# output_jsonl_path1 = "/data/Deepfake/ff_c23_object/metadata.jsonl"
-# def convert_bbox_to_float(jsonl_path, output_path):
-#     with open(jsonl_path, 'r', encoding='utf-8') as infile, open(output_path, 'w', encoding='utf-8') as outfile:
-#         for line in infile:
-#             # 解析每一行的JSON对象
-#             data = json.loads(line.strip())
-#             # num_bboxes = len(data['objects']['bbox'])
-#             # # 检查并转换bbox字段
-#             # if 'objects' in data:
-#             #     if 'bbox' in data['objects']:
-#             #         data['objects']['bbox'] = [[float(coord) for coord in box] for box in data['objects']['bbox']]
-#
-#             #加class 这个key
-#             if 'categories' in data['objects']:
-#                 category_value = data['objects']['categories']
-#                 if category_value[0] == 0:
-#                     data['objects']['class'] = [0] * 4
-#                 elif category_value[0] == 1:
-#                     data['objects']['class'] = [1] * 4
-#
-#             # 将转换后的JSON对象写入新的文件
-#             outfile.write(json.dumps(data) + '\n')
-#
-#
-# # 使用方法，指定输入JSONL文件路径和输出文件路径
-# convert_bbox_to_float(output_jsonl_path, output_jsonl_path1)
-
-def check_empty_bbox(jsonl_path):
-    with open(jsonl_path, 'r', encoding='utf-8') as infile:
-        for line_number, line in enumerate(infile, start=1):
+output_jsonl_path = "/data/Deepfake/ff_c23_object/train/metadata.jsonl"
+output_jsonl_path1 = "/data/Deepfake/ff_c23_object/metadata.jsonl"
+def convert_bbox_to_float(jsonl_path, output_path):
+    with open(jsonl_path, 'r', encoding='utf-8') as infile, open(output_path, 'w', encoding='utf-8') as outfile:
+        for line in infile:
+            # 解析每一行的JSON对象
             data = json.loads(line.strip())
-            if 'bbox' in data['objects']:
-                if not data['objects']['bbox']:  # 检查 bbox 是否为空
-                    print(f"Line {line_number}: bbox is empty")
-            else:
-                print(f"Line {line_number}: No bbox key found")
+            # num_bboxes = len(data['objects']['bbox'])
+            # # 检查并转换bbox字段
+            # if 'objects' in data:
+            #     if 'bbox' in data['objects']:
+            #         data['objects']['bbox'] = [[float(coord) for coord in box] for box in data['objects']['bbox']]
 
-# 使用方法，指定输入 JSONL 文件路径
-check_empty_bbox("/data/Deepfake/ff_c23_object/train/metadata.jsonl")
+            #加class 这个key
+            if 'categories' in data['objects']:
+                category_value = data['objects']['categories']
+                if category_value[0] == 0:
+                    data['objects']['class'] = [0, 1, 2, 3]
+                elif category_value[0] == 1:
+                    data['objects']['class'] = [4, 5, 6, 7]
+
+            # 将转换后的JSON对象写入新的文件
+            outfile.write(json.dumps(data) + '\n')
+
+
+# 使用方法，指定输入JSONL文件路径和输出文件路径
+convert_bbox_to_float(output_jsonl_path, output_jsonl_path1)
+
+# def check_empty_bbox(jsonl_path):
+#     with open(jsonl_path, 'r', encoding='utf-8') as infile:
+#         for line_number, line in enumerate(infile, start=1):
+#             data = json.loads(line.strip())
+#             if 'bbox' in data['objects']:
+#                 if not data['objects']['bbox']:  # 检查 bbox 是否为空
+#                     print(f"Line {line_number}: bbox is empty")
+#             else:
+#                 print(f"Line {line_number}: No bbox key found")
+#
+# # 使用方法，指定输入 JSONL 文件路径
+# check_empty_bbox("/data/Deepfake/ff_c23_object/train/metadata.jsonl")

@@ -71,6 +71,7 @@ class DetectModule(L.LightningModule):
             freeze_decoder: bool,
             extracted_layer: str,
             optimizer:str,
+            center_loss_weight: int,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -81,6 +82,7 @@ class DetectModule(L.LightningModule):
         self.mlp = MLP(self.input_dim, num_classes)
         self.k = cropped_size
         self.gnn = GNNClassifier(int(self.k * self.k),128 , num_classes)
+        self.center_loss_weight = center_loss_weight
 
 
 
@@ -270,6 +272,10 @@ class DetectModule(L.LightningModule):
         detr_output = self(x, labels)  # output class: DetrObjectDetectionOutput
         loss1 = detr_output.loss
 
+        center_pred = (detr_output['pred_boxes'][:, :2] + detr_output['pred_boxes'][:, 2:]) / 2
+        center_gt = (y["boxes"][:, :2] + y["boxes"][:, 2:]) / 2
+        center_loss = self.center_loss_weight * F.l1_loss(center_pred, center_gt, reduction='none').sum()
+
         #提取hook的特征图
         extracted_features = self.feature_maps['feats']
         extracted_features_1ch = extracted_features.mean(dim=1, keepdim=True) #降维
@@ -326,7 +332,7 @@ class DetectModule(L.LightningModule):
 
         # 构建 KNN 图
         batch_index = torch.tensor(batch_indices, dtype=torch.long).to(self.device)
-        edge_index = knn_graph(feature_vectors, k=4, batch=batch_index, loop=False)
+        edge_index = knn_graph(feature_vectors, k=3, batch=batch_index, loop=False)
 
         # 构建图数据对象
         data = Data(x=feature_vectors, edge_index=edge_index)

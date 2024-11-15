@@ -1,26 +1,28 @@
 # lightning.pytorch==2.2.0
 seed_everything: 0
+#ckpt_path: /home/bosheng/deepfake-detect-main/lightning_logs/version_152/checkpoints/epoch=3-step=3720.ckpt
 model:
   class_path: trainer.deepfake_detect.DetectModule
   init_args:
     optimizer_args:
-      lr: 2e-5
+      lr: 1e-5
       lr_backbone: 1e-4
-      lr_clr: 1e-4
+      lr_clr: 1e-3
       lr_weight_decay: 1e-4
     num_queries: 8
     num_classes: 2
-    cropped_size: 10
-    freeze_encoder: True
-    freeze_decoder: True
+    cropped_size: 12
+    freeze_encoder: False
+    freeze_decoder: False
     extracted_layer: self.model.model.backbone.conv_encoder.model.layer1[0].conv3
     optimizer: AdamW
+    center_loss_weight: 2
 data:
   class_path: dataset.data_modules.NTObjectDataModule
   init_args:
-    root_dir: /data/Deepfake/ff_c23_object
+    root_dir: /data/Deepfake/celeb_object
 #    root_dir2: /data/Deepfake/NT_object  ff_c23_object
-    batch_size: 128
+    batch_size: 192
     num_workers: 32
     image_size: 256
 trainer:

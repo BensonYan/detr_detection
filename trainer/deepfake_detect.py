@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torch_geometric.nn import knn_graph
 from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv, global_mean_pool,GraphNorm
+from utility import minimize_iou_overlap_loss, size_constraint_loss,extract_and_normalize_features,compute_cosine_similarity,similarity_loss
 class MLP(nn.Module):
     def __init__(self, input_dim, num_classes):
         super(MLP, self).__init__()
@@ -38,24 +39,24 @@ class GNNClassifier(nn.Module):
         super(GNNClassifier, self).__init__()
         # 定义 GCN 层
         self.conv1 = GCNConv(input_dim, hidden_dim)
-        self.conv2 = GCNConv(hidden_dim, hidden_dim)
+        # self.conv2 = GCNConv(hidden_dim, hidden_dim)
         # 定义 GraphNorm
         self.graph_norm1 = GraphNorm(hidden_dim)
-        self.graph_norm2 = GraphNorm(hidden_dim)
-        self.fc1 = nn.Linear(hidden_dim, 64)
-        self.fc2 = nn.Linear(64, 16)
+        # self.graph_norm2 = GraphNorm(hidden_dim)
+        self.fc1 = nn.Linear(hidden_dim, 16)
+        # self.fc2 = nn.Linear(64, 16)
         self.fc3 = nn.Linear(16, num_classes)
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
         x = self.conv1(x, edge_index)
         x = self.graph_norm1(x, batch).relu()
-        x = self.conv2(x, edge_index)
-        x = self.graph_norm2(x, batch).relu()
+        # x = self.conv2(x, edge_index)
+        # x = self.graph_norm2(x, batch).relu()
         # 使用 global_mean_pool，根据 batch 进行池化
         x = global_mean_pool(x, batch)
         x = self.fc1(x)
-        x = self.fc2(x)
+        # x = self.fc2(x)
         x = self.fc3(x)
         return x
 
@@ -71,7 +72,7 @@ class DetectModule(L.LightningModule):
             freeze_decoder: bool,
             extracted_layer: str,
             optimizer:str,
-            center_loss_weight: int,
+            overlap_loss_weight: int,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -82,7 +83,7 @@ class DetectModule(L.LightningModule):
         self.mlp = MLP(self.input_dim, num_classes)
         self.k = cropped_size
         self.gnn = GNNClassifier(int(self.k * self.k),128 , num_classes)
-        self.center_loss_weight = center_loss_weight
+        self.overlap_loss_weight = overlap_loss_weight
 
 
 
@@ -271,13 +272,19 @@ class DetectModule(L.LightningModule):
             })
         detr_output = self(x, labels)  # output class: DetrObjectDetectionOutput
         loss1 = detr_output.loss
-
-        center_pred = (detr_output['pred_boxes'][:, :2] + detr_output['pred_boxes'][:, 2:]) / 2
-        center_gt = (y["boxes"][:, :2] + y["boxes"][:, 2:]) / 2
-        center_loss = self.center_loss_weight * F.l1_loss(center_pred, center_gt, reduction='none').sum()
+        box_size_loss = size_constraint_loss(detr_output['pred_boxes'])
+        iou_overlap_loss = self.overlap_loss_weight * minimize_iou_overlap_loss(detr_output['pred_boxes'], max_iou=0.3)
 
         #提取hook的特征图
         extracted_features = self.feature_maps['feats']
+
+        # 提取并归一化特征
+        normalized_features = extract_and_normalize_features(extracted_features, y["boxes"],x.shape[2:],self.device)
+        similarity_matrices = compute_cosine_similarity(normalized_features)
+
+        # 2. 计算相似度惩罚损失
+        sim_loss = similarity_loss(similarity_matrices)
+
         extracted_features_1ch = extracted_features.mean(dim=1, keepdim=True) #降维
         # 获取预测的边界框
         pred_boxes = detr_output['pred_boxes']
@@ -359,10 +366,16 @@ class DetectModule(L.LightningModule):
         self.log(f'{stage}_detr_ce_loss', detr_output['loss_dict']['loss_ce'], on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_detr_box_loss', detr_output['loss_dict']['loss_bbox'], on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_detr_giou_loss', detr_output['loss_dict']['loss_giou'], on_step=True, on_epoch=True, logger=True, sync_dist=True)
+        self.log(f'{stage}_detr_iou_overlap_loss', iou_overlap_loss, on_step=True, on_epoch=True,
+                 logger=True, sync_dist=True)
+        self.log(f'{stage}_detr_box_size_loss', box_size_loss, on_step=True, on_epoch=True,
+                 logger=True, sync_dist=True)
+        self.log(f'{stage}_detr_box_innerSim_loss', sim_loss, on_step=True, on_epoch=True,
+                 logger=True, sync_dist=True)
         self.log(f'{stage}_gnn_loss', loss2, on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_acc1', acc1, on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_auc1', auc1, on_step=True, on_epoch=True, logger=True, sync_dist=True)
-        return loss1 + loss2
+        return loss1 + loss2 + iou_overlap_loss + box_size_loss + sim_loss
 
     def configure_optimizers(self):
         # https://github-.com/roboflow/notebooks/blob/main/notebooks/train-huggingface-detr-on-custom-dataset.ipynb
@@ -387,7 +400,7 @@ class DetectModule(L.LightningModule):
         # optimizer = torch.optim.SGD(param_dicts, lr=lr, momentum=0.9)
         # optimizer = torch.optim.Adam(param_dicts, lr=lr)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.trainer.max_epochs)
-        # scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer2, T_max=self.trainer.max_epochs)
+        # schedulercccc2 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer2, T_max=self.trainer.max_epochs)
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
 
         #改源代码的网址： https://github.com/facebookresearch/detr/issues/101

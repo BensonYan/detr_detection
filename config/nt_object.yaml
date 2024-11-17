@@ -14,7 +14,7 @@ model:
     cropped_size: 12
     freeze_encoder: False
     freeze_decoder: False
-    extracted_layer: self.model.model.backbone.conv_encoder.model.layer1[0].conv3
+    extracted_layer: self.model.model.backbone.conv_encoder.model.conv1
     optimizer: AdamW
     overlap_loss_weight: 2
 data:

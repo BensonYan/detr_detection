@@ -99,7 +99,7 @@ class DetectModule(L.LightningModule):
             num_queries=num_queries,
         )
         self.feature_maps = {}
-        self.target_layer = self.model.model.backbone.conv_encoder.model.layer1[0].conv3 #layer4[-1].conv3
+        self.target_layer = self.model.model.backbone.conv_encoder.model.conv1 #layer4[-1].conv3  layer1[0].conv3
         self.hook_handle = self.target_layer.register_forward_hook(self.hook_fn)
 
         # for param in self.model.model.backbone.parameters():
@@ -283,7 +283,7 @@ class DetectModule(L.LightningModule):
         similarity_matrices = compute_cosine_similarity(normalized_features)
 
         # 2. 计算相似度惩罚损失
-        sim_loss = similarity_loss(similarity_matrices)
+        sim_loss = 4 * similarity_loss(similarity_matrices)
 
         extracted_features_1ch = extracted_features.mean(dim=1, keepdim=True) #降维
         # 获取预测的边界框

@@ -180,12 +180,15 @@ def similarity_loss(similarity_matrices, lower_threshold=0.3, upper_threshold=0.
     - loss: 相似度惩罚损失
     """
     b, num_boxes, _ = similarity_matrices.size()
+    # 取上三角区域（排除对角线）
+    mask = torch.triu(torch.ones(num_boxes, num_boxes), diagonal=1).bool().to(similarity_matrices.device)
+    upper_triangle = similarity_matrices[:, mask]  # [b, num_pairs]
 
     # 计算大于 upper_threshold 的惩罚
-    high_similarity_penalty = torch.clamp(similarity_matrices - upper_threshold, min=0) ** 2
+    high_similarity_penalty = torch.clamp(upper_triangle - upper_threshold, min=0) ** 2
 
     # 计算小于 lower_threshold 的惩罚
-    low_similarity_penalty = torch.clamp(lower_threshold - similarity_matrices, min=0) ** 2
+    low_similarity_penalty = torch.clamp(lower_threshold - upper_triangle, min=0) ** 2
 
     # 总损失
     loss = (high_similarity_penalty + low_similarity_penalty).sum() / (b * num_boxes * (num_boxes - 1))

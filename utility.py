@@ -2,7 +2,8 @@ import torch
 from torchvision.ops import box_iou
 import torch.nn.functional as F
 
-
+from torch_geometric.data import Data, Batch
+from torch_geometric.nn import knn_graph
 def minimize_iou_overlap_loss(pred_boxes, max_iou=0.5):
     """
     损失函数：最小化预测框之间的重叠（通过最小化 IoU 重叠）。
@@ -167,7 +168,7 @@ def compute_cosine_similarity(features):
 
 
 
-def similarity_loss(similarity_matrices, lower_threshold=0.3, upper_threshold=0.7):
+def similarity_loss(similarity_matrices, lower_threshold=0, upper_threshold=0.5):
     """
     对特定范围的相似度进行损失惩罚。
 
@@ -194,3 +195,101 @@ def similarity_loss(similarity_matrices, lower_threshold=0.3, upper_threshold=0.
     loss = (high_similarity_penalty + low_similarity_penalty).sum() / (b * num_boxes * (num_boxes - 1))
 
     return loss
+
+
+def convert_boxes_format(boxes):
+    """
+    将边界框从 [x1, y1, w, h] 格式转换为 [xc, yc, w, h] 格式。
+
+    参数：
+    - boxes: 输入边界框张量，形状为 [batch_size, num_boxes, 4]，格式为 [x1, y1, w, h]
+
+    返回值：
+    - converted_boxes: 转换后的边界框张量，形状为 [batch_size, num_boxes, 4]，格式为 [xc, yc, w, h]
+    """
+    x1 = boxes[..., 0]
+    y1 = boxes[..., 1]
+    w = boxes[..., 2]
+    h = boxes[..., 3]
+
+    # 计算中心坐标 xc 和 yc
+    xc = (x1 + w / 2) / 256
+    yc = (y1 + h / 2) / 256
+    w1 = w / 256
+    h1 = h / 256
+
+    # 构建转换后的边界框张量
+    converted_boxes = torch.stack([xc, yc, w1, h1], dim=-1)
+    return converted_boxes
+
+
+def extract_and_create_graph_per_sample(extracted_features_1ch, all_boxes, device, k=4, output_size=(7, 7)):
+    """
+    对每个样本的 10 个 cropped region 生成 KNN 图。
+
+    参数：
+    - extracted_features_1ch: 输入特征图，形状为 [batch_size, 1, H_feat, W_feat]
+    - all_boxes: 预测框的坐标，形状为 [batch_size, num_queries, 4]，格式为 [xc, yc, w, h]
+    - k: KNN 的最近邻参数
+    - output_size: 每个区域特征重采样的目标大小 (h, w)
+
+    返回值：
+    - batched_graph_data: PyTorch Geometric 的批次图数据对象
+    """
+    # 初始化列表
+    cropped_regions = []
+    batch_indices = []
+    batch_size = extracted_features_1ch.shape[0]
+    num_queries = all_boxes.shape[1]
+    H_feat, W_feat = extracted_features_1ch.shape[-2:]
+    graph_data_list = []  # 每个样本的图数据
+
+    for i in range(batch_size):
+        feat = extracted_features_1ch[i]  # [1, H_feat, W_feat]
+        boxes = all_boxes[i]  # [num_queries, 4]
+
+        # 获取预测框坐标
+        x_c, y_c, w, h = boxes.unbind(-1)
+        x_min = (x_c - 0.5 * w) * W_feat
+        y_min = (y_c - 0.5 * h) * H_feat
+        x_max = (x_c + 0.5 * w) * W_feat
+        y_max = (y_c + 0.5 * h) * H_feat
+
+        # 裁剪坐标到特征图范围
+        x_min = x_min.clamp(0, W_feat - 1).round().long()
+        y_min = y_min.clamp(0, H_feat - 1).round().long()
+        x_max = x_max.clamp(0, W_feat - 1).round().long()
+        y_max = y_max.clamp(0, H_feat - 1).round().long()
+
+        # 提取区域特征
+        for j in range(num_queries):  # 取 N 个查询
+            x1, y1, x2, y2 = x_min[j], y_min[j], x_max[j], y_max[j]
+            if x2 >= x1 and y2 >= y1:
+                # 提取区域特征
+                region = feat[:, y1:y2 + 1, x1:x2 + 1]  # [1, h, w]
+            else:
+                # 无效框使用零填充
+                region = torch.zeros((1, 1, 1))
+            cropped_regions.append(region)
+            batch_indices.append(i)
+
+    # 调整区域大小
+    resized_regions = []
+    for region in cropped_regions:
+        resized_region = F.interpolate(region.unsqueeze(0), size=output_size, mode='bilinear',
+                                       align_corners=False)
+        resized_region = resized_region.squeeze(0)
+        resized_regions.append(resized_region)
+    # 准备特征向量
+    feature_vectors = [region.view(-1) for region in resized_regions]
+    feature_vectors = torch.stack(feature_vectors)  # [total_num_regions, k * k]
+    # 构建 KNN 图
+    batch_index = torch.tensor(batch_indices, dtype=torch.long).to(device)
+    edge_index = knn_graph(feature_vectors, k, batch=batch_index, loop=False)
+
+    # 构建图数据对象
+    data = Data(x=feature_vectors, edge_index=edge_index)
+    data.batch = batch_index
+
+
+    return data

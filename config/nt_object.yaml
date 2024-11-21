@@ -7,15 +7,14 @@ model:
     optimizer_args:
       lr: 2e-6
       lr_backbone: 1e-4
-      lr_clr: 1e-3
+      lr_clr: 5e-4
       lr_weight_decay: 1e-4
     num_queries: 8
     num_classes: 2
     cropped_size: 12
+    pretrained: True
     freeze_encoder: False
     freeze_decoder: False
-    extracted_layer: self.model.model.backbone.conv_encoder.model.conv1
-    optimizer: AdamW
     overlap_loss_weight: 2
 data:
   class_path: dataset.data_modules.NTObjectDataModule

@@ -8,10 +8,10 @@ from transformers import DetrForObjectDetection, DetrConfig
 from sklearn.metrics import auc
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
+from torch_geometric.data import Data, Batch
 from torch_geometric.nn import knn_graph
-from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv, global_mean_pool,GraphNorm
-from utility import minimize_iou_overlap_loss, size_constraint_loss,extract_and_normalize_features,compute_cosine_similarity,similarity_loss
+from utility import minimize_iou_overlap_loss, size_constraint_loss,convert_boxes_format,extract_and_create_graph_per_sample, extract_and_normalize_features,compute_cosine_similarity,similarity_loss
 class MLP(nn.Module):
     def __init__(self, input_dim, num_classes):
         super(MLP, self).__init__()
@@ -70,12 +70,12 @@ class DetectModule(L.LightningModule):
             cropped_size: int,
             freeze_encoder: bool,
             freeze_decoder: bool,
-            extracted_layer: str,
-            optimizer:str,
             overlap_loss_weight: int,
+            pretrained: bool,
     ):
         super().__init__()
         self.save_hyperparameters()
+
         # config for the optimizer and scheduler
         self.optimizer_args = optimizer_args
         self.num_classes = num_classes
@@ -86,42 +86,52 @@ class DetectModule(L.LightningModule):
         self.overlap_loss_weight = overlap_loss_weight
 
 
+        if pretrained:
+            # id2label = {0: 'fake', 1: 'real'}
+            # label2id = {'fake': 0, 'real': 1}
+            id2label = {0: 'f_area1', 1: 'f_area2', 2: 'f_area3', 3: 'f_area4', 4: 'r_area1', 5: 'r_area2', 6: 'r_area3', 7: 'r_area4'}
+            label2id = {'f_area1': 0, 'f_area2': 1,  'f_area3': 2, 'f_area2': 3, 'r_area1': 4, 'r_area2': 5, 'r_area3': 6, 'r_area4': 7}
+            self.model = DetrForObjectDetection.from_pretrained(
+                "./detr-resnet-50",
+                id2label= id2label,
+                label2id=label2id,
+                ignore_mismatched_sizes=True,
+                num_queries=num_queries,
+            )
+            self.config = self.model.config
+            # for param in self.model.model.backbone.parameters():
+            #     param.requires_grad = False
+            # Freeze the parameters of the encoder
+            if freeze_encoder:
+                for param in self.model.model.encoder.parameters():
+                    param.requires_grad = False
+            else:
+                print("Encoder not freezed")
 
-        # id2label = {0: 'fake', 1: 'real'}
-        # label2id = {'fake': 0, 'real': 1}
-        id2label = {0: 'f_area1', 1: 'f_area2', 2: 'f_area3', 3: 'f_area4', 4: 'r_area1', 5: 'r_area2', 6: 'r_area3', 7: 'r_area4'}
-        label2id = {'f_area1': 0, 'f_area2': 1,  'f_area3': 2, 'f_area2': 3, 'r_area1': 4, 'r_area2': 5, 'r_area3': 6, 'r_area4': 7}
-        self.model = DetrForObjectDetection.from_pretrained(
-            "./detr-resnet-50",
-            id2label= id2label,
-            label2id=label2id,
-            ignore_mismatched_sizes=True,
-            num_queries=num_queries,
-        )
+            if freeze_decoder:
+                # Freeze the parameters of the decoder
+                for param in self.model.model.decoder.parameters():
+                    param.requires_grad = False
+            else:
+                print("Decoder not freezed")
+        else:
+            self.config = DetrConfig.from_json_file("/home/bosheng/deepfake-detect-main/config.json")
+            self.model = DetrForObjectDetection(self.config)
+            print("Training the DETR from scratch!")
+
+
+
+
         self.feature_maps = {}
-        self.target_layer = self.model.model.backbone.conv_encoder.model.conv1 #layer4[-1].conv3  layer1[0].conv3
+        self.target_layer = self.model.model.backbone.conv_encoder.model.layer1[0].conv3 #layer4[-1].conv3  layer1[0].conv3 conv1
         self.hook_handle = self.target_layer.register_forward_hook(self.hook_fn)
 
-        # for param in self.model.model.backbone.parameters():
-        #     param.requires_grad = False
-        # Freeze the parameters of the encoder
-        if freeze_encoder:
-            for param in self.model.model.encoder.parameters():
-                param.requires_grad = False
-        else:
-            print("Encoder not freezed")
-
-        if freeze_decoder:
-            # Freeze the parameters of the decoder
-            for param in self.model.model.decoder.parameters():
-                param.requires_grad = False
-        else:
-            print("Decoder not freezed")
+        self.conv1x1 = nn.Conv2d(self.target_layer .weight.shape[0], 1, kernel_size=1)
         self.criterion = nn.CrossEntropyLoss()
         self.auc = BinaryROC(thresholds=None)
 
     def hook_fn(self, module, input, output):
-        feature_maps = {}
+        # feature_maps = {}
         self.feature_maps['feats'] = output.detach()
     def forward(self, images, labels=None):
         # images: (batch_size, num_channel, height, width)
@@ -279,75 +289,27 @@ class DetectModule(L.LightningModule):
         extracted_features = self.feature_maps['feats']
 
         # 提取并归一化特征
-        normalized_features = extract_and_normalize_features(extracted_features, y["boxes"],x.shape[2:],self.device)
-        similarity_matrices = compute_cosine_similarity(normalized_features)
+        # normalized_features = extract_and_normalize_features(extracted_features, y["boxes"],x.shape[2:],self.device)
+        # similarity_matrices = compute_cosine_similarity(normalized_features)
+        #
+        # # 2. 计算相似度惩罚损失
+        # sim_loss = 4 * similarity_loss(similarity_matrices)
 
-        # 2. 计算相似度惩罚损失
-        sim_loss = 4 * similarity_loss(similarity_matrices)
-
-        extracted_features_1ch = extracted_features.mean(dim=1, keepdim=True) #降维
+        # extracted_features_1ch = extracted_features.mean(dim=1, keepdim=True) #降维_直接取均值
+        extracted_features_1ch = self.conv1x1(extracted_features)#降维_通过卷积
         # 获取预测的边界框
         pred_boxes = detr_output['pred_boxes']
-        # 初始化列表
-        cropped_regions = []
-        batch_indices = []
-
-        batch_size = extracted_features_1ch.shape[0]
-        num_queries = pred_boxes.shape[1]
-        H_feat, W_feat = extracted_features_1ch.shape[-2:]
-
-        for i in range(batch_size):
-            feat = extracted_features_1ch[i]  # [1, H_feat, W_feat]
-            boxes = pred_boxes[i]  # [num_queries, 4]
-
-            x_c, y_c, w, h = boxes.unbind(-1)
-            x_min = x_c - 0.5 * w
-            y_min = y_c - 0.5 * h
-            x_max = x_c + 0.5 * w
-            y_max = y_c + 0.5 * h
-
-            x_min = (x_min * W_feat).clamp(0, W_feat - 1)
-            y_min = (y_min * H_feat).clamp(0, H_feat - 1)
-            x_max = (x_max * W_feat).clamp(0, W_feat - 1)
-            y_max = (y_max * H_feat).clamp(0, H_feat - 1)
-
-            x_min = x_min.round().long()
-            y_min = y_min.round().long()
-            x_max = x_max.round().long()
-            y_max = y_max.round().long()
-
-            for j in range(num_queries):
-                x1, y1, x2, y2 = x_min[j], y_min[j], x_max[j], y_max[j]
-                if x2 >= x1 and y2 >= y1:
-                    region = feat[:, y1:y2 + 1, x1:x2 + 1]  # [1, h, w]
-                else:
-                    # 如果坐标无效，使用零张量替代
-                    region = torch.zeros((1, 1, 1))
-                cropped_regions.append(region)
-                batch_indices.append(i)
-        # 调整尺寸
+        converted_boxes = convert_boxes_format(y['boxes'])
+        all_boxes = torch.cat([converted_boxes,pred_boxes],dim=1)
+        # # 调整尺寸
         output_size = (self.k,self.k)  # 例如 (7, 7)
-        resized_regions = []
-        for region in cropped_regions:
-            resized_region = F.interpolate(region.unsqueeze(0), size=output_size, mode='bilinear', align_corners=False)
-            resized_region = resized_region.squeeze(0)
-            resized_regions.append(resized_region)
 
-        # 准备特征向量
-        feature_vectors = [region.view(-1) for region in resized_regions]
-        feature_vectors = torch.stack(feature_vectors)  # [total_num_regions, k * k]
+        data = extract_and_create_graph_per_sample(extracted_features_1ch,all_boxes,self.device, k=5, output_size=output_size)
 
-        # 构建 KNN 图
-        batch_index = torch.tensor(batch_indices, dtype=torch.long).to(self.device)
-        edge_index = knn_graph(feature_vectors, k=3, batch=batch_index, loop=False)
 
-        # 构建图数据对象
-        data = Data(x=feature_vectors, edge_index=edge_index)
-        data.batch = batch_index
         data.to(self.device)
 
         gnn_output = self.gnn(data)
-
 
         loss2 = self.criterion(gnn_output, y["class"].squeeze())
         # compute accuracy
@@ -358,9 +320,6 @@ class DetectModule(L.LightningModule):
         score = torch.select(score,1,1).unsqueeze(0)
         fpr, tpr, tresholds = self.auc(score, y["class"].view(1,y["class"].shape[0]))
         auc1 = auc(fpr.cpu().numpy(),tpr.cpu().numpy())
-        # if stage == 'train' and batch_idx % 100 == 0:
-        #     fig_, ax_ = self.auc.plot(score=True)
-        #     fig_.savefig(self.logger.log_dir + f"/epoch_{self.current_epoch}_step_{batch_idx}_AUC")
         # log every metric
         self.log(f'{stage}_detr_loss', loss1, on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_detr_ce_loss', detr_output['loss_dict']['loss_ce'], on_step=True, on_epoch=True, logger=True, sync_dist=True)
@@ -370,12 +329,12 @@ class DetectModule(L.LightningModule):
                  logger=True, sync_dist=True)
         self.log(f'{stage}_detr_box_size_loss', box_size_loss, on_step=True, on_epoch=True,
                  logger=True, sync_dist=True)
-        self.log(f'{stage}_detr_box_innerSim_loss', sim_loss, on_step=True, on_epoch=True,
-                 logger=True, sync_dist=True)
+        # self.log(f'{stage}_detr_box_innerSim_loss', sim_loss, on_step=True, on_epoch=True,
+        #          logger=True, sync_dist=True)
         self.log(f'{stage}_gnn_loss', loss2, on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_acc1', acc1, on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_auc1', auc1, on_step=True, on_epoch=True, logger=True, sync_dist=True)
-        return loss1 + loss2 + iou_overlap_loss + box_size_loss + sim_loss
+        return loss1 + self.config.gnn_loss_coefficient * loss2 + iou_overlap_loss + box_size_loss #+ sim_loss
 
     def configure_optimizers(self):
         # https://github-.com/roboflow/notebooks/blob/main/notebooks/train-huggingface-detr-on-custom-dataset.ipynb

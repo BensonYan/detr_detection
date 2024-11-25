@@ -82,7 +82,7 @@ class DetectModule(L.LightningModule):
         self.input_dim = num_queries * 256
         self.mlp = MLP(self.input_dim, num_classes)
         self.k = cropped_size
-        self.gnn = GNNClassifier(int(self.k * self.k),128 , num_classes)
+
         self.overlap_loss_weight = overlap_loss_weight
 
 
@@ -90,7 +90,14 @@ class DetectModule(L.LightningModule):
             # id2label = {0: 'fake', 1: 'real'}
             # label2id = {'fake': 0, 'real': 1}
             id2label = {0: 'f_area1', 1: 'f_area2', 2: 'f_area3', 3: 'f_area4', 4: 'r_area1', 5: 'r_area2', 6: 'r_area3', 7: 'r_area4'}
-            label2id = {'f_area1': 0, 'f_area2': 1,  'f_area3': 2, 'f_area2': 3, 'r_area1': 4, 'r_area2': 5, 'r_area3': 6, 'r_area4': 7}
+            label2id = {'f_area1': 0, 'f_area2': 1,  'f_area3': 2, 'f_area4': 3, 'r_area1': 4, 'r_area2': 5, 'r_area3': 6, 'r_area4': 7}
+            # id2label = {0: 'df_1', 1: 'df_2', 2: 'df_3', 3: 'df_4', 4: 'f2f_1', 5: 'f2f_2', 6: 'f2f_3', 7: 'f2f_4',
+            #             8: 'fs_1', 9: 'fs_2', 10: 'fs_3', 11: 'fs_4', 12: 'nt_1', 13: 'nt_2', 14: 'nt_3', 15:
+            #             'nt_4', 16: 'real_1', 17: 'real_2', 18: 'real_3', 19: 'real_4'}
+            # label2id = {'df_1': 0, 'df_2': 1, 'df_3': 2, 'df_4': 3, 'f2f_1': 4, 'f2f_2': 5, 'f2f_3': 6, 'f2f_4': 7,
+            #             'fs_1': 8, 'fs_2': 9, 'fs_3': 10, 'fs_4': 11, 'nt_1': 12, 'nt_2': 13, 'nt_3': 14, 'nt_4': 15,
+            #             'real_1': 16, 'real_2': 17, 'real_3': 18, 'real_4': 19}
+
             self.model = DetrForObjectDetection.from_pretrained(
                 "./detr-resnet-50",
                 id2label= id2label,
@@ -125,8 +132,8 @@ class DetectModule(L.LightningModule):
         self.feature_maps = {}
         self.target_layer = self.model.model.backbone.conv_encoder.model.layer1[0].conv3 #layer4[-1].conv3  layer1[0].conv3 conv1
         self.hook_handle = self.target_layer.register_forward_hook(self.hook_fn)
-
-        self.conv1x1 = nn.Conv2d(self.target_layer .weight.shape[0], 1, kernel_size=1)
+        self.gnn = GNNClassifier(int(self.k * self.k*self.target_layer.weight.shape[0]), 128, num_classes)
+        self.conv1x1 = nn.Conv2d(self.target_layer.weight.shape[0], 1, kernel_size=1)
         self.criterion = nn.CrossEntropyLoss()
         self.auc = BinaryROC(thresholds=None)
 
@@ -296,7 +303,7 @@ class DetectModule(L.LightningModule):
         # sim_loss = 4 * similarity_loss(similarity_matrices)
 
         # extracted_features_1ch = extracted_features.mean(dim=1, keepdim=True) #降维_直接取均值
-        extracted_features_1ch = self.conv1x1(extracted_features)#降维_通过卷积
+        # extracted_features_1ch = self.conv1x1(extracted_features)#降维_通过卷积
         # 获取预测的边界框
         pred_boxes = detr_output['pred_boxes']
         converted_boxes = convert_boxes_format(y['boxes'])
@@ -304,7 +311,7 @@ class DetectModule(L.LightningModule):
         # # 调整尺寸
         output_size = (self.k,self.k)  # 例如 (7, 7)
 
-        data = extract_and_create_graph_per_sample(extracted_features_1ch,all_boxes,self.device, k=5, output_size=output_size)
+        data = extract_and_create_graph_per_sample(extracted_features,all_boxes,self.device, k=5, output_size=output_size)
 
 
         data.to(self.device)

@@ -223,7 +223,7 @@ def convert_boxes_format(boxes):
     return converted_boxes
 
 
-def extract_and_create_graph_per_sample(extracted_features_1ch, all_boxes, device, k=4, output_size=(7, 7)):
+def extract_and_create_graph_per_sample(extracted_features, all_boxes, device, k=10, output_size=(7, 7)):
     """
     对每个样本的 10 个 cropped region 生成 KNN 图。
 
@@ -239,13 +239,13 @@ def extract_and_create_graph_per_sample(extracted_features_1ch, all_boxes, devic
     # 初始化列表
     cropped_regions = []
     batch_indices = []
-    batch_size = extracted_features_1ch.shape[0]
+    batch_size = extracted_features.shape[0]
     num_queries = all_boxes.shape[1]
-    H_feat, W_feat = extracted_features_1ch.shape[-2:]
+    H_feat, W_feat = extracted_features.shape[-2:]
     graph_data_list = []  # 每个样本的图数据
 
     for i in range(batch_size):
-        feat = extracted_features_1ch[i]  # [1, H_feat, W_feat]
+        feat = extracted_features[i]  # [1, H_feat, W_feat]
         boxes = all_boxes[i]  # [num_queries, 4]
 
         # 获取预测框坐标
@@ -269,7 +269,7 @@ def extract_and_create_graph_per_sample(extracted_features_1ch, all_boxes, devic
                 region = feat[:, y1:y2 + 1, x1:x2 + 1]  # [1, h, w]
             else:
                 # 无效框使用零填充
-                region = torch.zeros((1, 1, 1))
+                region = torch.zeros((feat.size(0), 1, 1))
             cropped_regions.append(region)
             batch_indices.append(i)
 

@@ -1,17 +1,17 @@
 # lightning.pytorch==2.2.0
 seed_everything: 0
-#ckpt_path: /home/bosheng/deepfake-detect-main/lightning_logs/version_152/checkpoints/epoch=3-step=3720.ckpt
+#ckpt_path: /home/bosheng/deepfake-detect-main/lightning_logs/version_183/checkpoints/epoch=54-step=68200.ckpt
 model:
   class_path: trainer.deepfake_detect.DetectModule
   init_args:
     optimizer_args:
-      lr: 2e-6
-      lr_backbone: 1e-4
+      lr: 1e-6
+      lr_backbone: 2e-4
       lr_clr: 5e-4
       lr_weight_decay: 1e-4
-    num_queries: 8
+    num_queries: 6
     num_classes: 2
-    cropped_size: 12
+    cropped_size: 14
     pretrained: True
     freeze_encoder: False
     freeze_decoder: False
@@ -22,7 +22,7 @@ data:
     root_dir: /data/Deepfake/celeb_object
 #    root_dir2: /data/Deepfake/NT_object  ff_c23_object celeb_object
     batch_size: 192
-    num_workers: 32
+    num_workers: 30
     image_size: 256
 trainer:
   callbacks:
@@ -55,5 +55,5 @@ trainer:
         max_depth: 3
   enable_progress_bar: True
   precision: 32-true #16-mixed 32-true
-  max_epochs: 50
+  max_epochs: 120
 #  logger: False

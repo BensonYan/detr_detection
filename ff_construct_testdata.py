@@ -147,99 +147,101 @@ def SSIM(img_real,img_fake,specific_method):
 # SSIM(img_real,img_fake,"NeuralTextures")
 
 # 定义真图和假图文件夹路径
-real_images_folder = "/media/bosheng/One Touch/ff_c23_new/face/test/real"
-fake_images_base_folder = "/media/bosheng/One Touch/ff_c23_new/face/test/fake"
-method = ["Deepfakes", "Face2Face", "FaceSwap", "NeuralTextures"]
-# start_index = 889
-
-all_real_files = os.listdir(real_images_folder)
-grouped_real_files = defaultdict(list)
-for filename in all_real_files:
-    prefix = filename.split('_')[0]  # 提取前缀
-    grouped_real_files[prefix].append(filename)
-
-# 对每个前缀的真图进行排序
-sorted_real_files = {prefix: sorted(files, key=natural_sort_key) for prefix, files in grouped_real_files.items()}
-
-# # 初始化存储SSIM值的字典
-# ssim_results = {f'method_{i+1}': [] for i in range(4)}
-
-
-grouped_fake_files = {method[i]: defaultdict(list) for i in range(4)}
-for method_idx in range(4):
-    fake_images_folder = os.path.join(fake_images_base_folder, method[method_idx])
-    fake_files = os.listdir(fake_images_folder)
-    for filename in fake_files:
-        prefix = filename.split('_')[0]  # 提取前缀
-        grouped_fake_files[method[method_idx]][prefix].append(filename)
-
-sorted_real_files = {prefix: sorted(files, key=natural_sort_key) for prefix, files in grouped_real_files.items()}
-sorted_fake_files = {
-    method: {prefix: sorted(files, key=natural_sort_key) for prefix, files in method_files.items()}
-    for method, method_files in grouped_fake_files.items()
-}
-
-for prefix, real_files in tqdm(sorted_real_files.items(), desc="Processing groups"):
-    # 检查假图文件夹中是否有对应前缀
-    for method_idx in range(4):
-        method_name = method[method_idx]
-        fake_images_folder = os.path.join(fake_images_base_folder, method[method_idx])
-        if prefix not in sorted_fake_files[method_name]:
-            continue  # 跳过没有对应前缀的伪造方法
-
-        # 获取对应的假图
-        fake_files = sorted_fake_files[method_name][prefix]
-
-        # 计算真图的起始和结束索引
-        start_idx = method_idx * 35
-        end_idx = start_idx + 35
-        real_batch = real_files[start_idx:end_idx]  # 真图的每35张为一批
-
-        # 逐一读取并计算SSIM
-        for real_name, fake_name in zip(real_batch, fake_files[:35]):
-            real_number = int(re.findall(r'\d+', real_name)[0])
-            fake_number = int(re.findall(r'\d+', fake_name)[0])
-            # if real_number < start_index or fake_number < start_index:
-            #     continue
-            real_image_path = os.path.join(real_images_folder, real_name)
-            fake_image_path = os.path.join(fake_images_folder, fake_name)
-            # print(real_image_path + "-----" + "fake:" + fake_image_path)
-            img_real = cv2.imread(real_image_path)
-            img_fake = cv2.imread(fake_image_path)
-            specific_method = fake_image_path.split('/')[-2]
-            bboxes = SSIM(img_real,img_fake,specific_method)
-            shutil.copy(real_image_path,
-                        output_path + '/' + real_name)
-            shutil.copy(fake_image_path,
-                        output_path + '/' + specific_method+ '_' + fake_name)
-            write_jsonl(real_name,bboxes,category="real")
-            write_jsonl(fake_name,bboxes,specific_method,"fake")
-
-# output_path = "/data/Deepfake/ff_c23_object/train"
-# output_jsonl_path = "/data/Deepfake/ff_c23_object/train/metadata.jsonl"
-# output_jsonl_path1 = "/data/Deepfake/ff_c23_object/metadata.jsonl"
-# def convert_bbox_to_float(jsonl_path, output_path):
-#     with open(jsonl_path, 'r', encoding='utf-8') as infile, open(output_path, 'w', encoding='utf-8') as outfile:
-#         for line in infile:
-#             # 解析每一行的JSON对象
-#             data = json.loads(line.strip())
-#             # num_bboxes = len(data['objects']['bbox'])
-#             # # 检查并转换bbox字段
-#             # if 'objects' in data:
-#             #     if 'bbox' in data['objects']:
-#             #         data['objects']['bbox'] = [[float(coord) for coord in box] for box in data['objects']['bbox']]
+# real_images_folder = "/media/bosheng/One Touch/ff_c23_new/face/test/real"
+# fake_images_base_folder = "/media/bosheng/One Touch/ff_c23_new/face/test/fake"
+# method = ["Deepfakes", "Face2Face", "FaceSwap", "NeuralTextures"]
+# # start_index = 889
 #
-#             #加class 这个key
-#             if 'categories' in data['objects']:
-#                 category_value = data['objects']['categories']
-#                 if category_value[0] == 0:
-#                     data['objects']['class'] = [0] * 4
-#                 elif category_value[0] == 1:
-#                     data['objects']['class'] = [1] * 4
+# all_real_files = os.listdir(real_images_folder)
+# grouped_real_files = defaultdict(list)
+# for filename in all_real_files:
+#     prefix = filename.split('_')[0]  # 提取前缀
+#     grouped_real_files[prefix].append(filename)
 #
-#             # 将转换后的JSON对象写入新的文件
-#             outfile.write(json.dumps(data) + '\n')
+# # 对每个前缀的真图进行排序
+# sorted_real_files = {prefix: sorted(files, key=natural_sort_key) for prefix, files in grouped_real_files.items()}
+#
+# # # 初始化存储SSIM值的字典
+# # ssim_results = {f'method_{i+1}': [] for i in range(4)}
 #
 #
-# # 使用方法，指定输入JSONL文件路径和输出文件路径
-# convert_bbox_to_float(output_jsonl_path, output_jsonl_path1)
+# grouped_fake_files = {method[i]: defaultdict(list) for i in range(4)}
+# for method_idx in range(4):
+#     fake_images_folder = os.path.join(fake_images_base_folder, method[method_idx])
+#     fake_files = os.listdir(fake_images_folder)
+#     for filename in fake_files:
+#         prefix = filename.split('_')[0]  # 提取前缀
+#         grouped_fake_files[method[method_idx]][prefix].append(filename)
+#
+# sorted_real_files = {prefix: sorted(files, key=natural_sort_key) for prefix, files in grouped_real_files.items()}
+# sorted_fake_files = {
+#     method: {prefix: sorted(files, key=natural_sort_key) for prefix, files in method_files.items()}
+#     for method, method_files in grouped_fake_files.items()
+# }
+#
+# for prefix, real_files in tqdm(sorted_real_files.items(), desc="Processing groups"):
+#     # 检查假图文件夹中是否有对应前缀
+#     for method_idx in range(4):
+#         method_name = method[method_idx]
+#         fake_images_folder = os.path.join(fake_images_base_folder, method[method_idx])
+#         if prefix not in sorted_fake_files[method_name]:
+#             continue  # 跳过没有对应前缀的伪造方法
+#
+#         # 获取对应的假图
+#         fake_files = sorted_fake_files[method_name][prefix]
+#
+#         # 计算真图的起始和结束索引
+#         start_idx = method_idx * 35
+#         end_idx = start_idx + 35
+#         real_batch = real_files[start_idx:end_idx]  # 真图的每35张为一批
+#
+#         # 逐一读取并计算SSIM
+#         for real_name, fake_name in zip(real_batch, fake_files[:35]):
+#             real_number = int(re.findall(r'\d+', real_name)[0])
+#             fake_number = int(re.findall(r'\d+', fake_name)[0])
+#             # if real_number < start_index or fake_number < start_index:
+#             #     continue
+#             real_image_path = os.path.join(real_images_folder, real_name)
+#             fake_image_path = os.path.join(fake_images_folder, fake_name)
+#             # print(real_image_path + "-----" + "fake:" + fake_image_path)
+#             img_real = cv2.imread(real_image_path)
+#             img_fake = cv2.imread(fake_image_path)
+#             specific_method = fake_image_path.split('/')[-2]
+#             bboxes = SSIM(img_real,img_fake,specific_method)
+#             shutil.copy(real_image_path,
+#                         output_path + '/' + real_name)
+#             shutil.copy(fake_image_path,
+#                         output_path + '/' + specific_method+ '_' + fake_name)
+#             write_jsonl(real_name,bboxes,category="real")
+#             write_jsonl(fake_name,bboxes,specific_method,"fake")
+
+output_path = "/data/Deepfake/ff_c23_object/test"
+output_jsonl_path = "/data/Deepfake/ff_c23_object/test/metadata.jsonl"
+output_jsonl_path1 = "/data/Deepfake/ff_c23_object/metadata.jsonl"
+def convert_bbox_to_float(jsonl_path, output_path):
+    with open(jsonl_path, 'r', encoding='utf-8') as infile, open(output_path, 'w', encoding='utf-8') as outfile:
+        for line in infile:
+            # 解析每一行的JSON对象
+            data = json.loads(line.strip())
+            # num_bboxes = len(data['objects']['bbox'])
+            # # 检查并转换bbox字段
+            # if 'objects' in data:
+            #     if 'bbox' in data['objects']:
+            #         data['objects']['bbox'] = [[float(coord) for coord in box] for box in data['objects']['bbox']]
+
+            #加class 这个key
+            if 'categories' in data['objects']:
+                category_value = data['objects']['categories']
+                if category_value[0] == 0:
+                    # data['objects']['class'] = [0] * 4
+                    data['objects']['class'] = [0, 1, 2, 3]
+                elif category_value[0] == 1:
+                    # data['objects']['class'] = [1] * 4
+                    data['objects']['class'] = [4, 5, 6, 7]
+
+            # 将转换后的JSON对象写入新的文件
+            outfile.write(json.dumps(data) + '\n')
+
+
+# 使用方法，指定输入JSONL文件路径和输出文件路径
+convert_bbox_to_float(output_jsonl_path, output_jsonl_path1)

@@ -9,7 +9,7 @@ model:
       lr_backbone: 2e-4
       lr_clr: 5e-4
       lr_weight_decay: 1e-4
-    num_queries: 6
+    num_queries: 4
     num_classes: 2
     cropped_size: 14
     pretrained: True
@@ -19,7 +19,7 @@ model:
 data:
   class_path: dataset.data_modules.NTObjectDataModule
   init_args:
-    root_dir: /data/Deepfake/celeb_object
+    root_dir: /data/Deepfake/ff_c23_object
 #    root_dir2: /data/Deepfake/NT_object  ff_c23_object celeb_object
     batch_size: 192
     num_workers: 30

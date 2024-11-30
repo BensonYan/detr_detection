@@ -223,7 +223,7 @@ def convert_boxes_format(boxes):
     return converted_boxes
 
 
-def extract_and_create_graph_per_sample(extracted_features, all_boxes, device, k=10, output_size=(7, 7)):
+def extract_and_create_graph_per_sample(extracted_features, all_boxes, device, k=30, output_size=(7, 7)):
     """
     对每个样本的 10 个 cropped region 生成 KNN 图。
 

@@ -5,23 +5,24 @@ model:
   class_path: trainer.deepfake_detect.DetectModule
   init_args:
     optimizer_args:
-      lr: 1e-6
-      lr_backbone: 2e-4
+      lr: 1e-5
+      lr_backbone: 5e-4
       lr_clr: 5e-4
       lr_weight_decay: 1e-4
-    num_queries: 4
+    num_queries: 6
     num_classes: 2
-    cropped_size: 14
+    cropped_size: 10
     pretrained: True
     freeze_encoder: False
     freeze_decoder: False
     overlap_loss_weight: 2
+    unfreeze_at_epoch: 1
 data:
   class_path: dataset.data_modules.NTObjectDataModule
   init_args:
     root_dir: /data/Deepfake/ff_c23_object
 #    root_dir2: /data/Deepfake/NT_object  ff_c23_object celeb_object
-    batch_size: 192
+    batch_size: 160
     num_workers: 30
     image_size: 256
 trainer:

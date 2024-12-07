@@ -216,8 +216,8 @@ from tqdm import tqdm
 #             write_jsonl(fake_name,bboxes,specific_method,"fake")
 
 # output_path = "/data/Deepfake/ff_c23_object/train"
-output_jsonl_path = "/data/Deepfake/ff_c23_object/train/metadata.jsonl"
-output_jsonl_path1 = "/data/Deepfake/ff_c23_object/metadata.jsonl"
+output_jsonl_path = "/data/Deepfake/ff_c23_object/metadata20class_test.jsonl"#"/data/Deepfake/ff_c23_object/train/metadata20class.jsonl"
+output_jsonl_path1 = "/data/Deepfake/ff_c23_object/metadata8class_test.jsonl"
 def convert_bbox_to_float(jsonl_path, output_path):
     with open(jsonl_path, 'r', encoding='utf-8') as infile, open(output_path, 'w', encoding='utf-8') as outfile:
         for line in infile:
@@ -242,8 +242,8 @@ def convert_bbox_to_float(jsonl_path, output_path):
 
 
 # 使用方法，指定输入JSONL文件路径和输出文件路径
-convert_bbox_to_float(output_jsonl_path, output_jsonl_path1)
-
+# convert_bbox_to_float(output_jsonl_path, output_jsonl_path1)
+#
 # def check_empty_bbox(jsonl_path):
 #     with open(jsonl_path, 'r', encoding='utf-8') as infile:
 #         for line_number, line in enumerate(infile, start=1):
@@ -256,3 +256,503 @@ convert_bbox_to_float(output_jsonl_path, output_jsonl_path1)
 #
 # # 使用方法，指定输入 JSONL 文件路径
 # check_empty_bbox("/data/Deepfake/ff_c23_object/train/metadata.jsonl")
+
+
+def replace_empty_bbox_with_previous(jsonl_path, output_path):
+    previous_bboxes = None  # 用于存储上一行的 bbox 值
+
+    with open(jsonl_path, 'r', encoding='utf-8') as infile, open(output_path, 'w', encoding='utf-8') as outfile:
+        for line_number, line in enumerate(infile, start=1):
+            data = json.loads(line.strip())
+
+
+            if 'bbox' in data['objects']:
+                for box in data['objects']['bbox']:
+                # 检查 bbox 是否为 [0.0, 0.0, 0.0, 0.0]
+                    if box == [0.0, 0.0, 0.0, 0.0]:
+                        if previous_bboxes:
+                            data['objects']['bbox'] = previous_bboxes  # 替换为上一行的 bbox
+                            print(f"Line {line_number}: bbox was empty and replaced with the previous bbox")
+                        else:
+                            print(f"Line {line_number}: bbox is empty, but no previous bbox to replace")
+                        break
+            else:
+                print(f"Line {line_number}: No bbox key found in an object")
+
+            # 更新 previous_bboxes 为当前行的 bbox 值（如果存在且不为空）
+            if 'objects' in data:
+                current_bboxes = data['objects']['bbox']
+                if current_bboxes:  # 存在 bbox 的情况下更新
+                    previous_bboxes = current_bboxes
+
+            # 写入修改后的数据到输出文件
+            # outfile.write(json.dumps(data) + '\n')
+
+
+# replace_empty_bbox_with_previous(output_jsonl_path, output_jsonl_path1)
+
+def check_zero_bbox(input_file_path,output_file_path):
+    """
+    Checks for bbox entries where width (w) or height (h) is zero.
+    Saves the lines with invalid bbox to a new file for review.
+
+    Args:
+    - input_file_path (str): Path to the input JSONL file.
+    - output_file_path (str): Path to save the lines with invalid bbox.
+    """
+    invalid_lines = []
+
+    with open(input_file_path, "r") as infile:
+        for line in infile:
+            data = json.loads(line)
+            objects = data.get("objects", {})
+            bboxes = objects.get("bbox", [])
+
+            # Check for zero width (w) or height (h) in bboxes
+            for bbox in bboxes:
+                x, y, w, h = bbox
+                if w == 0 or h == 0:
+                    invalid_lines.append(line)
+                    break  # No need to check other bboxes in this line
+
+    # Save the invalid lines to a new file
+    # with open(output_file_path, "w") as outfile:
+    #     for line in invalid_lines:
+    #         outfile.write(line)
+
+    print(f"Found {len(invalid_lines)} lines with invalid bbox.")
+    print(f"Invalid lines saved to: {output_file_path}")
+
+# check_zero_bbox("/data/Deepfake/ff_c23_object/train/metadata.jsonl","/data/Deepfake/ff_c23_object/invalid_metadata.jsonl")
+
+# def replace_zero_bbox(input_file_path, output_file_path):
+#     """
+#     Fixes bbox entries where width (w) or height (h) is zero by replacing it with the non-zero value
+#     from the same bbox if available.
+#
+#     Args:
+#     - input_file_path (str): Path to the input JSONL file.
+#     - output_file_path (str): Path to save the updated JSONL file.
+#     """
+#     fixed_lines = []
+#
+#     with open(input_file_path, "r") as infile:
+#         for line in infile:
+#             data = json.loads(line)
+#             objects = data.get("objects", {})
+#             bboxes = objects.get("bbox", [])
+#
+#             updated_bboxes = []
+#             for bbox in bboxes:
+#                 x, y, w, h = bbox
+#
+#                 # Replace zero width (w) or height (h) with the non-zero counterpart
+#                 if w == 0 and h > 0:
+#                     w = h  # Replace w with h if h is non-zero
+#                 elif h == 0 and w > 0:
+#                     h = w  # Replace h with w if w is non-zero
+#                 updated_bboxes.append([x, y, w, h])
+#
+#             # Update the data object with fixed bboxes
+#             objects["bbox"] = updated_bboxes
+#             data["objects"] = objects
+#             fixed_lines.append(data)
+#
+#     # Save the fixed data to a new JSONL file
+#     with open(output_file_path, "w") as outfile:
+#         for line in fixed_lines:
+#             outfile.write(json.dumps(line) + "\n")
+#
+#     print(f"Updated bounding boxes saved to: {output_file_path}")
+#
+# replace_zero_bbox("/data/Deepfake/ff_c23_matafile/test/metadata8class_1.jsonl","/data/Deepfake/ff_c23_object/metadata.jsonl")
+# check_zero_bbox("/data/Deepfake/ff_c23_object/metadata.jsonl","/data/Deepfake/ff_c23_object/invalid_metadata.jsonl")
+
+#for copy different manipulation method images in FF++
+def filter_metadata(input_file_path, output_file_path, source_folder, destination_folder,mani_method):
+    """
+    Filters the JSONL file and copies the corresponding files based on the following rules:
+    1. For blocks of lines with category=1, copy the first 35 lines.
+    2. Copy all lines where file_name starts with "Deepfakes".
+    3. Copies the files corresponding to the selected lines into the destination folder.
+
+    Args:
+    - input_file_path (str): Path to the input JSONL file.
+    - output_file_path (str): Path to save the filtered JSONL file.
+    - source_folder (str): Path to the folder containing the original files.
+    - destination_folder (str): Path to the folder where selected files will be copied.
+    """
+    selected_lines = []
+    category_1_count = 0
+    within_category_1_block = False  # Tracks whether we're in a category=1 block
+    selected_file_names = set()
+
+    with open(input_file_path, "r") as infile:
+        lines = list(infile)  # Read all lines
+        for line in lines:
+            data = json.loads(line)
+            file_name = data.get("file_name", "")
+            category = data.get("objects", {}).get("categories", [])
+
+            # Rule 1: Handle category=1 blocks
+            if 1 in category:
+                if not within_category_1_block:
+                    # Start of a new category=1 block
+                    within_category_1_block = True
+                    category_1_count = 0
+                if category_1_count < 35:
+                    selected_lines.append(line)
+                    selected_file_names.add(file_name)
+                    category_1_count += 1
+            else:
+                # Reset category block flag if not in a category=1 line
+                within_category_1_block = False
+
+            # Rule 2: Handle "Deepfakes" lines
+            if file_name.startswith(mani_method):
+                selected_lines.append(line)
+                selected_file_names.add(file_name)
+
+    # if not os.path.exists(destination_folder):
+    #     os.makedirs(destination_folder)
+    # Write the selected lines to the output JSONL file
+    with open(output_file_path, "w") as outfile:
+        outfile.writelines(selected_lines)
+
+    # Copy the corresponding files to the destination folder
+
+
+    # for file_name in selected_file_names:
+    #     source_path = os.path.join(source_folder, file_name)
+    #     destination_path = os.path.join(destination_folder, file_name)
+    #     if os.path.exists(source_path):
+    #         shutil.copy(source_path, destination_path)
+    #     else:
+    #         print(f"File not found: {source_path}")
+
+    print(f"Filtered JSONL file saved to: {output_file_path}")
+    print(f"Selected files copied to: {destination_folder}")
+
+# input_file = "/data/Deepfake/ff_c23_object/test/metadata.jsonl"  # Replace with the actual input file path
+# output_file = "/data/Deepfake/df_object/test/metadata.jsonl"  # Replace with the desired output file path
+# source_folder = "/data/Deepfake/ff_c23_object/train"  # Replace with the folder containing the original files
+# destination_folder = "/data/Deepfake/f2f_object/train"  # Replace with the folder to copy selected files
+# filter_metadata(input_file, output_file, source_folder, destination_folder,mani_method="Deepfakes")
+
+
+def update_invalid_bboxes(input_file_path, output_file_path):
+    """
+    Fix invalid bounding boxes ([0, 0, 0, 0]) in the first image of each category.
+    - If the first file in a category has invalid bboxes, find another image in the
+      same category where all bboxes are valid.
+    - Replace the first file's bboxes with valid bboxes from the found image.
+
+    Args:
+    - input_file_path (str): Path to the input JSONL file.
+    - output_file_path (str): Path to save the updated JSONL file.
+    """
+    category_map = {}  # Maps category keys to first file and its bbox validity
+    updated_lines = []  # List to store updated JSONL lines
+
+    def get_category_key(file_name, category):
+        """Determine the category key based on the filename and category."""
+        parts = file_name.split("_")
+        if category == 1 and len(parts) > 0:
+            return parts[0]  # Use the first part for category 1
+        elif category == 0 and len(parts) > 1:
+            return f"{parts[0]}_{parts[1]}"  # Use first two parts for category 0
+        return None
+
+    # Read and process the JSONL file
+    with open(input_file_path, "r") as infile:
+        lines = list(infile)
+
+        # Iterate through all lines to map category and track files
+        for line in lines:
+            data = json.loads(line)
+            file_name = data.get("file_name", "")
+            objects = data.get("objects", {})
+            category = objects.get("categories", [])[0] if "categories" in objects else None
+            bboxes = objects.get("bbox", [])
+
+            # Determine the category key
+            category_key = get_category_key(file_name, category)
+            if not category_key:
+                updated_lines.append(data)
+                continue
+
+            # Track the first image in each category
+            if category_key not in category_map:
+                invalid_bbox = any(all(value == 0 for value in bbox) for bbox in bboxes)
+                category_map[category_key] = {
+                    "first_file_name": file_name,
+                    "first_invalid": invalid_bbox,
+                    "valid_bboxes": None,  # Placeholder for valid bboxes
+                }
+
+            # Check for fully valid bboxes in subsequent files
+            if not any(all(value == 0 for value in bbox) for bbox in bboxes):  # All bboxes valid
+                if category_map[category_key]["valid_bboxes"] is None:
+                    category_map[category_key]["valid_bboxes"] = bboxes
+
+            updated_lines.append(data)
+
+    # Update the first file in each category if needed
+    for i, data in enumerate(updated_lines):
+        file_name = data.get("file_name", "")
+        objects = data.get("objects", {})
+        category = objects.get("categories", [])[0] if "categories" in objects else None
+        bboxes = objects.get("bbox", [])
+        category_key = get_category_key(file_name, category)
+
+        if category_key in category_map and file_name == category_map[category_key]["first_file_name"]:
+            # If the first file is invalid and a valid bbox is found, update it
+            if category_map[category_key]["first_invalid"] and category_map[category_key]["valid_bboxes"]:
+                print(f"Updating {file_name} in category {category_key}")
+                data["objects"]["bbox"] = category_map[category_key]["valid_bboxes"]
+
+            updated_lines[i] = data  # Update the line
+
+    # Save the updated JSONL file
+    with open(output_file_path, "w") as outfile:
+        for data in updated_lines:
+            outfile.write(json.dumps(data) + "\n")
+
+    print(f"Updated JSONL file saved to: {output_file_path}")
+
+# input_file = "/data/Deepfake/ff_c23_matafile/test/metadata20class.jsonl"  # Replace with your input JSONL file path
+# output_file = "/data/Deepfake/ff_c23_matafile/updated_metadata_test.jsonl"  # Replace with your desired output JSON file path
+# update_invalid_bboxes(input_file, output_file)
+
+
+# def check_invalid_bboxes(input_file_path, output_file_path):
+#     """
+#     Check for invalid bounding boxes ([0, 0, 0, 0]) in a JSONL file.
+#     - For `category = 1`: Group by the first part of the filename before "_".
+#     - For `category = 0`: Group by the first two parts of the filename before "_".
+#
+#     Args:
+#     - input_file_path (str): Path to the JSONL file to check.
+#     - output_file_path (str): Path to save the invalid categories and their corresponding file names.
+#     """
+#     invalid_categories = {}  # Dictionary to store invalid categories
+#
+#     def get_category_key(file_name, category):
+#         """Determine the category key based on the filename and category."""
+#         parts = file_name.split("_")
+#         if category == 1 and len(parts) > 0:
+#             return parts[0]  # Use the first part for category 1
+#         elif category == 0 and len(parts) > 1:
+#             return f"{parts[0]}_{parts[1]}"  # Use first two parts for category 0
+#         return None
+#
+#     # Process the JSONL file
+#     processed_categories = set()
+#     with open(input_file_path, "r") as infile:
+#         for line in infile:
+#             data = json.loads(line)
+#             file_name = data.get("file_name", "")
+#             objects = data.get("objects", {})
+#             category = objects.get("categories", [])[0] if "categories" in objects else None
+#             bboxes = objects.get("bbox", [])
+#
+#             # Determine the category key
+#             category_key = get_category_key(file_name, category)
+#             if not category_key or category_key in processed_categories:
+#                 continue  # Skip if no valid key or already processed
+#
+#             # Check if any bbox is invalid ([0, 0, 0, 0])
+#             invalid_bbox = any(all(value == 0 for value in bbox) for bbox in bboxes)
+#             if invalid_bbox:
+#                 invalid_categories[category_key] = file_name
+#
+#             # Mark this category key as processed
+#             processed_categories.add(category_key)
+#
+#     # Save invalid categories to output file
+#     with open(output_file_path, "w") as outfile:
+#         json.dump(invalid_categories, outfile, indent=4)
+#
+#     print(f"Invalid categories saved to: {output_file_path}")
+#
+# input_file = "/data/Deepfake/ff_c23_matafile/updated_metadata.jsonl"  # Replace with your input JSONL file path
+# output_file = "/data/Deepfake/ff_c23_matafile/invalid_categories.jsonl"  # Replace with your desired output JSON file path
+# check_invalid_bboxes(input_file, output_file)
+
+def update_invalid_bboxes_and_copy(input_file_path, output_file_path, source_folder, invalid_folder):
+    """
+    1. Checks for invalid bounding boxes ([0, 0, 0, 0]) in the first image of each category.
+    2. If all bboxes in a category are invalid, moves all files of that category to another folder.
+
+    Args:
+    - input_file_path (str): Path to the input JSONL file.
+    - output_file_path (str): Path to save the updated JSONL file.
+    - source_folder (str): Path to the folder containing the original files.
+    - invalid_folder (str): Path to the folder where invalid files will be moved.
+    """
+    category_map = {}  # Maps category keys to metadata
+    updated_lines = []  # Stores the updated lines for output
+    invalid_categories = set()  # Tracks categories where all bboxes are invalid
+
+    def get_category_key(file_name, category):
+        """Determine the category key based on the filename and category."""
+        parts = file_name.split("_")
+        if category == 1 and len(parts) > 0:
+            return parts[0]  # Use the first part for category 1
+        elif category == 0 and len(parts) > 1:
+            return f"{parts[0]}_{parts[1]}"  # Use first two parts for category 0
+        return None
+
+    # Read the JSONL file and process each line
+    with open(input_file_path, "r") as infile:
+        lines = list(infile)
+        category_files = {}  # Tracks all files belonging to each category
+        for line in lines:
+            data = json.loads(line)
+            file_name = data.get("file_name", "")
+            objects = data.get("objects", {})
+            category = objects.get("categories", [])[0] if "categories" in objects else None
+            bboxes = objects.get("bbox", [])
+
+            # Determine the category key
+            category_key = get_category_key(file_name, category)
+            if not category_key:
+                updated_lines.append(line)  # Keep the line unchanged
+                continue
+
+            # Initialize tracking for this category if not already present
+            if category_key not in category_map:
+                category_map[category_key] = {"invalid": True, "file_name": file_name}
+                category_files[category_key] = []
+
+            # Track all files in this category
+            category_files[category_key].append(file_name)
+
+            # Check if bboxes in this file are valid
+            valid_bbox_found = any(not all(value == 0 for value in bbox) for bbox in bboxes)
+            if valid_bbox_found:
+                category_map[category_key]["invalid"] = False
+
+            # Update the first invalid file if necessary
+            if category_map[category_key]["invalid"] and valid_bbox_found:
+                first_file_name = category_map[category_key]["file_name"]
+                for i, updated_line in enumerate(updated_lines):
+                    updated_data = json.loads(updated_line)
+                    if updated_data["file_name"] == first_file_name:
+                        updated_data["objects"]["bbox"] = bboxes
+                        updated_lines[i] = json.dumps(updated_data) + "\n"
+                        category_map[category_key]["invalid"] = False
+                        break
+
+            # Add the line to updated output
+            updated_lines.append(line)
+
+    # Move invalid files to the invalid folder
+    if not os.path.exists(invalid_folder):
+        os.makedirs(invalid_folder)
+
+    for category_key, metadata in category_map.items():
+        if metadata["invalid"]:  # If all bboxes in the category are invalid
+            print(f"Category '{category_key}' is invalid. Moving files to {invalid_folder}")
+            for file_name in category_files[category_key]:
+                source_path = os.path.join(source_folder, file_name)
+                destination_path = os.path.join(invalid_folder, file_name)
+                if os.path.exists(source_path):
+                    shutil.move(source_path, destination_path)
+                else:
+                    print(f"File not found: {source_path}")
+
+    # Save the updated JSONL file
+    # with open(output_file_path, "w") as outfile:
+    #     outfile.writelines(updated_lines)
+
+    print(f"Updated JSONL file saved to: {output_file_path}")
+    print(f"Invalid files moved to: {invalid_folder}")
+
+# Example usage
+
+input_file = "/data/Deepfake/nt_object/test/metadata.jsonl"  # Replace with your input JSONL file path
+output_file = "/data/Deepfake/ff_c23_matafile/invalid_categories_remove_test.jsonl"   # Replace with your desired output JSON file path
+source_folder = "/data/Deepfake/nt_object/test/"  # Folder containing original files
+invalid_folder = "/data/Deepfake/ff_c23_remove/nt/test/"  # Folder to move invalid files
+update_invalid_bboxes_and_copy(input_file, output_file, source_folder, invalid_folder)
+
+
+def validate_and_update_bboxes(input_file_path, output_file_path):
+    """
+    Updates bounding boxes in each category of the JSONL file:
+    - Checks all images in a category for valid bounding boxes.
+    - If a bbox is invalid, replaces it with the bbox from the first image of that category (e.g., ..._1.png).
+    - Skips the category if the bbox in the first image is invalid.
+
+    Args:
+    - input_file_path (str): Path to the input JSONL file.
+    - output_file_path (str): Path to save the updated JSONL file.
+    """
+    category_map = {}  # Maps category keys to their first image (..._1.png) and bbox
+    updated_lines = []  # List to store updated JSONL lines
+
+    def get_category_key(file_name, category):
+        """Determine the category key based on the filename and category."""
+        parts = file_name.split("_")
+        if category == 1 and len(parts) > 0:
+            return parts[0]  # Use the first part for category 1
+        elif category == 0 and len(parts) > 1:
+            return f"{parts[0]}_{parts[1]}"  # Use first two parts for category 0
+        return None
+
+
+    # Read and process the JSONL file
+    with open(input_file_path, "r") as infile:
+        lines = list(infile)
+
+        for line in lines:
+            data = json.loads(line)
+            file_name = data.get("file_name", "")
+            objects = data.get("objects", {})
+            category = objects.get("categories", [])[0] if "categories" in objects else None
+            bboxes = objects.get("bbox", [])
+
+            # Determine the category key
+            category_key = get_category_key(file_name,category)
+
+            # Identify the first image (..._1.png) for each category
+            if category_key not in category_map and file_name.endswith("_1.png"):
+                valid_bbox = next((bbox for bbox in bboxes if not all(value == 0 for value in bbox)), None)
+                category_map[category_key] = {"file_name": file_name, "bbox": valid_bbox}
+
+            updated_lines.append(data)
+
+    # Validate and update bboxes in each category
+    for data in updated_lines:
+        file_name = data.get("file_name", "")
+        objects = data.get("objects", {})
+        bboxes = objects.get("bbox", [])
+        category = objects.get("categories", [])[0] if "categories" in objects else None
+        category_key = get_category_key(file_name,category)
+
+        # Get the bbox from the first image in the category
+        first_bbox = category_map[category_key]["bbox"] if category_key in category_map else None
+
+        # If the first bbox is valid, update invalid bboxes in this file
+        if first_bbox:
+            updated_bboxes = []
+            for bbox in bboxes:
+                if all(value == 0 for value in bbox):  # Invalid bbox
+                    updated_bboxes.append(first_bbox)  # Replace with the first bbox
+                else:
+                    updated_bboxes.append(bbox)
+            data["objects"]["bbox"] = updated_bboxes
+
+    # Save the updated JSONL file
+    with open(output_file_path, "w") as outfile:
+        for data in updated_lines:
+            outfile.write(json.dumps(data) + "\n")
+
+    print(f"Updated JSONL file saved to: {output_file_path}")
+
+# Example usage
+
+# input_file = "/data/Deepfake/ff_c23_matafile/invalid_categories_remove_test.jsonl"  # Replace with your input JSONL file path
+# output_file = "/data/Deepfake/ff_c23_object/metadata20class_test.jsonl"  # Replace with your desired output JSON file path
+# validate_and_update_bboxes(input_file, output_file)

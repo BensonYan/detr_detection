@@ -25,7 +25,7 @@
   "encoder_layers": 6,
   "eos_coefficient": 0.1,
   "giou_cost": 2,
-  "giou_loss_coefficient": 2,
+  "giou_loss_coefficient": 10,
   "gnn_loss_coefficient" : 5,
   "id2label": {
     "0": "N/A",

@@ -6,59 +6,11 @@ from torchmetrics.classification import BinaryROC
 import torch.nn as nn
 from transformers import DetrForObjectDetection, DetrConfig
 from sklearn.metrics import auc
-import matplotlib.pyplot as plt
-import torch.nn.functional as F
-from torch_geometric.data import Data, Batch
-from torch_geometric.nn import knn_graph
-from torch_geometric.nn import GCNConv, global_mean_pool,GraphNorm
-from utility import minimize_iou_overlap_loss, size_constraint_loss,convert_boxes_format,extract_and_create_graph_per_sample, extract_and_normalize_features,compute_cosine_similarity,similarity_loss
-class MLP(nn.Module):
-    def __init__(self, input_dim, num_classes):
-        super(MLP, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 512)
-        self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(512, 256)
-        self.relu2 = nn.ReLU()
-        self.fc3 = nn.Linear(256, 64)
-        self.relu3 = nn.ReLU()
-        self.fc4 = nn.Linear(64, num_classes)
+from torch_geometric.nn import global_mean_pool
+from utility import minimize_iou_overlap_loss, size_constraint_loss,convert_boxes_format,extract_and_create_graph_per_sample1,build_graph
+from Network.network import MultiHeadGCN, MLP
+from Loss.single_center_loss import SingleCenterLoss
 
-    def forward(self, x):
-        out = self.fc1(x)
-        out = self.relu1(out)
-        out = self.fc2(out)
-        out = self.relu2(out)
-        out = self.fc3(out)
-        out = self.relu3(out)
-        out = self.fc4(out)
-        return out
-
-
-class GNNClassifier(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_classes):
-        super(GNNClassifier, self).__init__()
-        # 定义 GCN 层
-        self.conv1 = GCNConv(input_dim, hidden_dim)
-        self.conv2 = GCNConv(hidden_dim, hidden_dim)
-        # 定义 GraphNorm
-        self.graph_norm1 = GraphNorm(hidden_dim)
-        self.graph_norm2 = GraphNorm(hidden_dim)
-        self.fc1 = nn.Linear(hidden_dim, 64)
-        self.fc2 = nn.Linear(64, 16)
-        self.fc3 = nn.Linear(16, num_classes)
-
-    def forward(self, data):
-        x, edge_index, batch = data.x, data.edge_index, data.batch
-        x = self.conv1(x, edge_index)
-        x = self.graph_norm1(x, batch).relu()
-        # x = self.conv2(x, edge_index)
-        # x = self.graph_norm2(x, batch).relu()
-        # 使用 global_mean_pool，根据 batch 进行池化
-        x = global_mean_pool(x, batch)
-        x = self.fc1(x)
-        x = self.fc2(x)
-        x = self.fc3(x)
-        return x
 
 
 class DetectModule(L.LightningModule):
@@ -72,6 +24,7 @@ class DetectModule(L.LightningModule):
             freeze_decoder: bool,
             overlap_loss_weight: int,
             pretrained: bool,
+            unfreeze_at_epoch: int,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -80,23 +33,27 @@ class DetectModule(L.LightningModule):
         self.optimizer_args = optimizer_args
         self.num_classes = num_classes
         self.input_dim = num_queries * 256
-        self.mlp = MLP(self.input_dim, num_classes)
+        # self.mlp = MLP(self.input_dim, num_classes)
         self.k = cropped_size
 
         self.overlap_loss_weight = overlap_loss_weight
+        self.unfreeze_at_epoch = unfreeze_at_epoch
+        self.backbone_frozen = False  # 初始状态为冻结
+
+        # 冻结 Backbone
 
 
         if pretrained:
             # id2label = {0: 'fake', 1: 'real'}
             # label2id = {'fake': 0, 'real': 1}
-            # id2label = {0: 'f_area1', 1: 'f_area2', 2: 'f_area3', 3: 'f_area4', 4: 'r_area1', 5: 'r_area2', 6: 'r_area3', 7: 'r_area4'}
-            # label2id = {'f_area1': 0, 'f_area2': 1,  'f_area3': 2, 'f_area4': 3, 'r_area1': 4, 'r_area2': 5, 'r_area3': 6, 'r_area4': 7}
-            id2label = {0: 'df_1', 1: 'df_2', 2: 'df_3', 3: 'df_4', 4: 'f2f_1', 5: 'f2f_2', 6: 'f2f_3', 7: 'f2f_4',
-                        8: 'fs_1', 9: 'fs_2', 10: 'fs_3', 11: 'fs_4', 12: 'nt_1', 13: 'nt_2', 14: 'nt_3', 15:
-                        'nt_4', 16: 'real_1', 17: 'real_2', 18: 'real_3', 19: 'real_4'}
-            label2id = {'df_1': 0, 'df_2': 1, 'df_3': 2, 'df_4': 3, 'f2f_1': 4, 'f2f_2': 5, 'f2f_3': 6, 'f2f_4': 7,
-                        'fs_1': 8, 'fs_2': 9, 'fs_3': 10, 'fs_4': 11, 'nt_1': 12, 'nt_2': 13, 'nt_3': 14, 'nt_4': 15,
-                        'real_1': 16, 'real_2': 17, 'real_3': 18, 'real_4': 19}
+            id2label = {0: 'f_area1', 1: 'f_area2', 2: 'f_area3', 3: 'f_area4', 4: 'r_area1', 5: 'r_area2', 6: 'r_area3', 7: 'r_area4'}
+            label2id = {'f_area1': 0, 'f_area2': 1,  'f_area3': 2, 'f_area4': 3, 'r_area1': 4, 'r_area2': 5, 'r_area3': 6, 'r_area4': 7}
+            # id2label = {0: 'df_1', 1: 'df_2', 2: 'df_3', 3: 'df_4', 4: 'f2f_1', 5: 'f2f_2', 6: 'f2f_3', 7: 'f2f_4',
+            #             8: 'fs_1', 9: 'fs_2', 10: 'fs_3', 11: 'fs_4', 12: 'nt_1', 13: 'nt_2', 14: 'nt_3', 15:
+            #             'nt_4', 16: 'real_1', 17: 'real_2', 18: 'real_3', 19: 'real_4'}
+            # label2id = {'df_1': 0, 'df_2': 1, 'df_3': 2, 'df_4': 3, 'f2f_1': 4, 'f2f_2': 5, 'f2f_3': 6, 'f2f_4': 7,
+            #             'fs_1': 8, 'fs_2': 9, 'fs_3': 10, 'fs_4': 11, 'nt_1': 12, 'nt_2': 13, 'nt_3': 14, 'nt_4': 15,
+            #             'real_1': 16, 'real_2': 17, 'real_3': 18, 'real_4': 19}
 
             self.model = DetrForObjectDetection.from_pretrained(
                 "./detr-resnet-50",
@@ -106,8 +63,7 @@ class DetectModule(L.LightningModule):
                 num_queries=num_queries,
             )
             self.config = self.model.config
-            # for param in self.model.model.backbone.parameters():
-            #     param.requires_grad = False
+            self.freeze_backbone()
             # Freeze the parameters of the encoder
             if freeze_encoder:
                 for param in self.model.model.encoder.parameters():
@@ -134,10 +90,31 @@ class DetectModule(L.LightningModule):
         # self.feature_shape = None
         self.target_layer = self.model.model.backbone.conv_encoder.model.layer1[1].act1 #layer4[-1].conv3  layer1[0].conv3 conv1
         self.hook_handle = self.target_layer.register_forward_hook(self.hook_fn)
-        self.gnn = GNNClassifier(int(self.k * self.k*self.model.model.backbone.conv_encoder.model.layer1[1].conv1.weight.shape[0]), 128, num_classes)
+        # self.gnn = GNNClassifier(int(self.k * self.k*self.model.model.backbone.conv_encoder.model.layer1[1].conv1.weight.shape[0]), 128, num_classes)
+        self.gnn = MultiHeadGCN(self.model.model.backbone.conv_encoder.model.layer1[1].conv1.weight.shape[0], 64, num_classes)
         # self.conv1x1 = nn.Conv2d(self.target_layer.weight.shape[0], 1, kernel_size=1)
+        self.embedding_fn = nn.Linear(int((4) * self.model.model.backbone.conv_encoder.model.layer1[1].conv1.weight.shape[0]), 256)
+        #D: 256, ouput dimension of embedding_fn
+        self.scl = SingleCenterLoss(D=256)
         self.criterion = nn.CrossEntropyLoss()
         self.auc = BinaryROC(thresholds=None)
+
+    def freeze_backbone(self):
+        """冻结 Backbone 参数"""
+        for param in self.model.model.backbone.parameters():
+            param.requires_grad = False
+
+    def unfreeze_backbone(self):
+        """解冻 Backbone 参数"""
+        for param in self.model.model.backbone.parameters():
+            param.requires_grad = True
+
+    def on_train_epoch_start(self):
+        """在每个 epoch 开始时检查是否需要解冻"""
+        if self.trainer.current_epoch == self.unfreeze_at_epoch and self.backbone_frozen:
+            print(f"Epoch {self.unfreeze_at_epoch}: Unfreezing backbone")
+            self.unfreeze_backbone()
+            self.backbone_frozen = False  # 确保只解冻一次
 
     def hook_fn(self, module, input, output):
         # feature_maps = {}
@@ -314,14 +291,18 @@ class DetectModule(L.LightningModule):
         # # 调整尺寸
         output_size = (self.k,self.k)  # 例如 (7, 7)
 
-        data = extract_and_create_graph_per_sample(extracted_features,converted_boxes,self.device, k=5, output_size=output_size)
+        # data, b_feat = extract_and_create_graph_per_sample1(extracted_features,converted_boxes,self.device, k=50, output_size=output_size)
+        data, b_feat = build_graph(extracted_features,converted_boxes,self.device, output_size=output_size)
 
+        #SCL calculation
+        embed_b_feat = self.embedding_fn(b_feat)
 
-        data.to(self.device)
+        scl = self.scl(embed_b_feat,y["class"])
+
 
         gnn_output = self.gnn(data)
 
-        loss2 = self.criterion(gnn_output, y["class"].squeeze())
+        loss2 = self.criterion(gnn_output, y["class"])
         # compute accuracy
         # https://lightning.ai/docs/torchmetrics/stable/classification/accuracy.html
         acc1 = accuracy(gnn_output.argmax(1), y["class"].squeeze(), task="multiclass", num_classes=self.num_classes, top_k=1)
@@ -331,12 +312,13 @@ class DetectModule(L.LightningModule):
         fpr, tpr, tresholds = self.auc(score, y["class"].view(1,y["class"].shape[0]))
         auc1 = auc(fpr.cpu().numpy(),tpr.cpu().numpy())
         # log every metric
+        self.log(f'{stage}_scl_loss', scl, on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_detr_loss', loss1, on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_detr_ce_loss', detr_output['loss_dict']['loss_ce'], on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_detr_box_loss', detr_output['loss_dict']['loss_bbox'], on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_detr_giou_loss', detr_output['loss_dict']['loss_giou'], on_step=True, on_epoch=True, logger=True, sync_dist=True)
-        self.log(f'{stage}_detr_iou_overlap_loss', iou_overlap_loss, on_step=True, on_epoch=True,
-                 logger=True, sync_dist=True)
+        # self.log(f'{stage}_detr_iou_overlap_loss', iou_overlap_loss, on_step=True, on_epoch=True,
+        #          logger=True, sync_dist=True)
         self.log(f'{stage}_detr_box_size_loss', box_size_loss, on_step=True, on_epoch=True,
                  logger=True, sync_dist=True)
         # self.log(f'{stage}_detr_box_innerSim_loss', sim_loss, on_step=True, on_epoch=True,
@@ -344,7 +326,7 @@ class DetectModule(L.LightningModule):
         self.log(f'{stage}_gnn_loss', loss2, on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_acc1', acc1, on_step=True, on_epoch=True, logger=True, sync_dist=True)
         self.log(f'{stage}_auc1', auc1, on_step=True, on_epoch=True, logger=True, sync_dist=True)
-        return loss1 + self.config.gnn_loss_coefficient * loss2 + iou_overlap_loss + box_size_loss #+ sim_loss
+        return loss1 + self.config.gnn_loss_coefficient * loss2  + box_size_loss + 10 * scl #+ sim_loss
 
     def configure_optimizers(self):
         # https://github-.com/roboflow/notebooks/blob/main/notebooks/train-huggingface-detr-on-custom-dataset.ipynb

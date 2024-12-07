@@ -36,7 +36,11 @@ class NTDetectionDataset(Dataset):
 
         if self.transforms is not None:
             image, target = self.transforms(image, target)
-
+        # for i in range(len(target['boxes'])):
+        #     x1, y1, w, h = target['boxes'][i]
+        #     if x1 + w >= image.shape[1] or y1 + h >= image.shape[1]:
+        #         print(boxes[i])
+        #         print(image.shape[1])
         return image, target
 
     def __len__(self):

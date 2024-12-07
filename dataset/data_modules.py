@@ -43,8 +43,8 @@ class NTObjectDataModule(L.LightningDataModule):
         # https://pytorch.org/vision/stable/transforms.html
         transform_train = v2.Compose([
             v2.ToImage(),
-            # v2.Resize(size=(self.image_size, self.image_size), antialias=True),
-            v2.RandomResizedCrop(size=(self.image_size, self.image_size), antialias=True),
+            v2.Resize(size=(self.image_size, self.image_size), antialias=True),
+            # v2.RandomResizedCrop(size=(self.image_size, self.image_size), antialias=True),
             # v2.RandomHorizontalFlip(p=0.5),
             v2.ToDtype(torch.float, scale=True),
             v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
